@@ -23,12 +23,18 @@ import ttk
 import tkFileDialog
 import csv
 import operator
+import sqlite3
+import pandas
+
+conn=sqlite3.connect('SingleServerDatabase_SRPTE.db')
 
 NumJobs = []
 NumJobsTime = []
 TimeSys = []
 ProcTime = []
 PercError = []
+
+
 
 #----------------------------------------------------------------------#
 # Class: GUI
@@ -41,7 +47,10 @@ class GUI(Tk):
 		Tk.__init__(self, master)
 		self.master = master        # reference to parent
 		self.statusText = StringVar()
-		random.seed(datetime.now())
+		global SEED
+		SEED = random.randint(0, 1000000000)
+		#SEED = 295588362
+		random.seed(SEED)
 
 		# Create the input frame
 		self.frameIn = Input(self)
@@ -123,6 +132,27 @@ class GUI(Tk):
 	def printIntro(self):
 		self.writeToConsole("SRPTE \n\n This application simulates a single server with Poisson arrivals and processing times of a general distribution. Each arrival has an estimation error within a percent error taken as input. Jobs are serviced in order of shortest remaining processing time.")
 
+	def saveParams(self, load, arrRate, arrDist, procRate, procDist, percErrorMin, percErrorMax, simLength, alpha, lower, upper):
+		##params = pandas.DataFrame(columns=('seed', 'numServers', 'load', 'arrRate', 'arrDist', 'procRate', 'procDist', 'alpha', 'lower', 'upper', 'percErrorMin', 'percErrorMax', 'simLength'))
+		print SEED
+		params = pandas.DataFrame({	'seed' : [SEED],
+									'load' : [load],
+									'arrRate' : [arrRate],
+									'arrDist' : [arrDist],
+									'procRate' : [procRate],
+									'procDist' : [procDist],
+									'alpha' : [alpha],
+									'lower' : [lower],
+									'upper' : [upper],
+									'percErrorMin' : [percErrorMin],
+									'percErrorMax' : [percErrorMax],
+									'simLength' : [simLength],
+									'avgNumJobs' : [MachineClass.AvgNumJobs]
+									})
+
+		params.to_sql(name='parameters', con=conn, if_exists='append')
+		print params
+
 	def printParams(self, load, arrDist, procRate, procDist, percErrorMin, percErrorMax, simLength): 
 		self.writeToConsole("--------------------------------------------------------------------------------")
 		self.writeToConsole("PARAMETERS:")
@@ -193,10 +223,10 @@ class GUI(Tk):
 
 		self.printParams(I.valuesList[0], 					#load
 						 'Exponential',						#arrival
-						 I.valuesList[1], I.distList[1],	#processing rate
-						 I.valuesList[2], 					#error min
-						 I.valuesList[3],					#error max 
-						 I.valuesList[4])					#sim time
+						 I.valuesList[2], I.distList[1],	#processing rate
+						 I.valuesList[3], 					#error min
+						 I.valuesList[4],					#error max 
+						 I.valuesList[5])					#sim time
 
 		main.timesClicked = 0
 		
@@ -204,13 +234,24 @@ class GUI(Tk):
 		MC = MachineClass(self)
 		MC.run(	I.valuesList[0],				# load 
 				'Exponential',					# arrival
-				I.valuesList[1], I.distList[1],	# processing
-				I.valuesList[2], 				# error min
-				I.valuesList[3],				# error max
-				I.valuesList[4])				# sim time
+				I.valuesList[2], I.distList[1],	# processing
+				I.valuesList[3], 				# error min
+				I.valuesList[4],				# error max
+				I.valuesList[5])				# sim time
+
+		self.saveParams(I.valuesList[0],		#load
+					I.valuesList[1], 				# arrival rate
+					'Exponential',					# arrival dist
+					I.valuesList[2], I.distList[1],	# processing
+					I.valuesList[3], 				# error min
+					I.valuesList[4],				# error max
+					I.valuesList[5],				# sim time
+					JobClass.BPArray[0],			# alpha
+					JobClass.BPArray[1],			# lower
+					JobClass.BPArray[2])			# upper
 
 		self.displayAverageData()
-		self.saveData()
+		#self.saveData()
 		self.updateStatusBar("Simulation complete.")
 
 
@@ -234,16 +275,12 @@ class Input(LabelFrame):
 		self.errorMessage = StringVar()
 		self.comboboxVal = StringVar()
 
-		self.loadDefault = 0.8					##################################CHANGE LATER	
-		#self.arrRateDefault = 0.8				##################################CHANGE LATER
-		self.procRateDefault = 0.5				##################################CHANGE LATER
-
-		self.loadInput.set(self.loadDefault)
-		#self.arrivalRateInput.set(self.arrRateDefault)
-		self.processingRateInput.set(self.procRateDefault)
-		self.percentErrorMinInput.set(-20)
-		self.percentErrorMaxInput.set(20)
-		self.simLengthInput.set(100000.0)
+		self.loadInput.set(0.9)       		 	   	##################################CHANGE LATER
+		#self.arrivalRateInput.set(1.0)         	 ##################################CHANGE LATER
+		self.processingRateInput.set(0.5)   	    ##################################CHANGE LATER
+		self.percentErrorMinInput.set(-50)          ##################################CHANGE LATER
+		self.percentErrorMaxInput.set(0)          ##################################CHANGE LATER
+		self.simLengthInput.set(1000000.0)
 
 		self.grid_columnconfigure(0, weight=2)
 		self.grid_columnconfigure(1, weight=2)
@@ -340,13 +377,21 @@ class Input(LabelFrame):
 		try:
 			load = self.loadInput.get()
 			#arrivalRate = self.arrivalRateInput.get()
-			processingRate = self.processingRateInput.get()
+			#processingRate = self.processingRateInput.get()
 			percentErrorMin = self.percentErrorMinInput.get()
 			percentErrorMax = self.percentErrorMaxInput.get()
 			maxSimLength = self.simLengthInput.get()
 		except ValueError:
 				self.errorMessage.set("One of your inputs is an incorrect type, try again.")
 				return 1
+		try:
+			arrRate = float(self.arrivalRateInput.get())
+		except ValueError:
+			arrRate = 0.0
+		try:
+			procRate = float(self.processingRateInput.get())
+		except ValueError:
+			procRate = 0.0
 
 		if load <= 0.0:
 			self.errorMessage.set("System load must be a non-zero value!")
@@ -354,15 +399,15 @@ class Input(LabelFrame):
 		#if arrivalRate <= 0.0:
 		#	self.errorMessage.set("Arrival rate must be a non-zero value!")
 		#	return 1
-		if processingRate <= 0.0:
-			self.errorMessage.set("Processing rate must be a non-zero value!")
-			return 1
+		#if processingRate <= 0.0:
+		#	self.errorMessage.set("Processing rate must be a non-zero value!")
+		#	return 1
 		if maxSimLength <= 0.0:
 			self.errorMessage.set("Simulation length must be a non-zero value!")
 			return 1
 		else:
 			self.errorMessage.set("")
-			Input.valuesList = [load, processingRate, percentErrorMin, percentErrorMax, maxSimLength]
+			Input.valuesList = [load, arrRate, procRate, percentErrorMin, percentErrorMax, maxSimLength]
 			return 0
 
 	def getDropDownValues(self):
