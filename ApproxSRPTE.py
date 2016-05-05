@@ -13,13 +13,12 @@
 from Tkinter import *
 from datetime import datetime
 from math import log
-#import plotly.plotly as py
-#from plotly.graph_objs import Scatter
-#import plotly.graph_objs as go
+import plotly.plotly as py
+from plotly.graph_objs import Scatter
+import plotly.graph_objs as go
 from bokeh.plotting import figure, output_file, show
 from bokeh.charts import Bar, output_file, show
 from collections import OrderedDict
-import pandas
 
 import copy
 import random
@@ -28,6 +27,11 @@ import ttk
 import tkFileDialog
 import csv
 import operator
+
+import sqlite3
+import pandas
+
+conn=sqlite3.connect('SingleServerDatabase_ASRPTE.db')
 
 NumJobs = []
 NumJobsTime = []
@@ -46,7 +50,11 @@ class GUI(Tk):
 		Tk.__init__(self, master)
 		self.master = master        # reference to parent
 		self.statusText = StringVar()
-		self.seed = random.seed(datetime.now())
+		global SEED
+		SEED = random.randint(0, 1000000000)
+		#SEED = 295588362
+		random.seed(SEED)
+		
 
 		# Create the input frame
 		self.frameIn = Input(self)
@@ -142,90 +150,112 @@ class GUI(Tk):
 		self.writeToConsole("Processing Rate = %.4f, Processing Distribution = %s"%(procRate, str(procDist)))
 		self.writeToConsole("% Error  = " + " %.4f, %.4f"%(percErrorMin, percErrorMax))
 		self.writeToConsole("Number of Classes = %d"%numClasses)
-		self.writeToConsole("Simulation Length = %.4f\n\n"%simLength)
+		self.writeToConsole("Simulation Length = %.4f"%simLength)
+
+	def saveParams(self, load, arrRate, arrDist, procRate, procDist, percErrorMin, percErrorMax, numClasses, simLength, alpha, lower, upper):
+		##params = pandas.DataFrame(columns=('seed', 'numServers', 'load', 'arrRate', 'arrDist', 'procRate', 'procDist', 'alpha', 'lower', 'upper', 'percErrorMin', 'percErrorMax', 'simLength'))
+		print SEED
+		params = pandas.DataFrame({	'seed' : [SEED],
+									'load' : [load],
+									'arrRate' : [arrRate],
+									'arrDist' : [arrDist],
+									'procRate' : [procRate],
+									'procDist' : [procDist],
+									'alpha' : [alpha],
+									'lower' : [lower],
+									'upper' : [upper],
+									'percErrorMin' : [percErrorMin],
+									'percErrorMax' : [percErrorMax],
+									'numClasses' : [numClasses],
+									'simLength' : [simLength],
+									'avgNumJobs' : [MachineClass.AvgNumJobs]
+									})
+
+		params.to_sql(name='parameters', con=conn, if_exists='append')
+		print params
+
+	# def plotNumJobsInSys(self, numClasses):
+	# 	# SCATTER PLOT
+	# 	output_file("Scatter_Case24")
+	# 	scatter = figure(title = "Average Number of Jobs Over Time",
+	# 					x_axis_label = "Time",
+	# 					y_axis_label = "Number of Jobs")
+	# 	#trace0.scatter(NumJobsTime, NumJobs)
+	# 	scatter.line(NumJobsTime, NumJobs)
+	# 	scatter.circle(NumJobsTime, NumJobs, size=1)
+	# 	show(scatter)
+
+
+ 
+	# 	#-----------------------------------------------------------------------------#
+	# 	# BLOCK DIAGRAM
+	# 	output_file("Bar_Case24")
+
+	# 	classRange = range(1, numClasses + 1)
+	# 	classes = [format(i,'02d') for i in classRange]
+
+	# 	# remove placeholder element
+	# 	MachineClass.AvgNumJobsArray.pop(0)
+
+	# 	dictionary = {'number of jobs': MachineClass.AvgNumJobsArray, 'classes': classes}
+	# 	df = pandas.DataFrame(data=dictionary)
+
+	# 	bar = Bar(df, 'classes', values='number of jobs', title="Average Number of Jobs Per Class")
+	# 	show(bar)
 
 	def plotNumJobsInSys(self, numClasses):
-		# SCATTER PLOT
-		output_file("SRPT_NumJobsInSys: Case 4")
-		scatter = figure(title = "Average Number of Jobs Over Time",
-						x_axis_label = "Time",
-						y_axis_label = "Number of Jobs")
-		#trace0.scatter(NumJobsTime, NumJobs)
-		scatter.line(NumJobsTime, NumJobs)
-		scatter.circle(NumJobsTime, NumJobs, size=1)
-		show(scatter)
-
-
+		py.sign_in('mailacrs','wowbsbc0qo')
+		trace0 = Scatter(x=NumJobsTime, y=NumJobs)
+		data = [trace0]
+		layout = go.Layout(
+			title='Average Number of Jobs Over Time',
+			xaxis=dict(
+				title='Time',
+				titlefont=dict(
+				family='Courier New, monospace',
+				size=18,
+				color='#7f7f7f'
+			)
+		),
+			yaxis=dict(
+				title='Number of Jobs',
+				titlefont=dict(
+				family='Courier New, monospace',
+				size=18,
+				color='#7f7f7f'
+			)
+		)
+		)
+		fig = go.Figure(data=data, layout=layout)
+		unique_url = py.plot(fig, filename = 'SRPT_NumJobsInSys: Case1')
 
 		#-----------------------------------------------------------------------------#
-		# BLOCK DIAGRAM
-		output_file("SRPT_NumJobsInSysPerClass: Case4")
-
-		classRange = range(1, numClasses + 1)
-		classes = [format(i,'02d') for i in classRange]
-
-		# remove placeholder element
-		MachineClass.AvgNumJobsArray.pop(0)
-
-		dictionary = {'number of jobs': MachineClass.AvgNumJobsArray, 'classes': classes}
-		df = pandas.DataFrame(data=dictionary)
-
-		bar = Bar(df, 'classes', values='number of jobs', title="test chart")
-		show(bar)
-
-	# def plotNumJobsInSys1(self, numClasses):
-	# 	py.sign_in('mailacrs','wowbsbc0qo')
-	# 	trace0 = Scatter(x=NumJobsTime, y=NumJobs)
-	# 	data = [trace0]
-	# 	layout = go.Layout(
-	# 		title='Average Number of Jobs Over Time',
-	# 		xaxis=dict(
-	# 			title='Time',
-	# 			titlefont=dict(
-	# 			family='Courier New, monospace',
-	# 			size=18,
-	# 			color='#7f7f7f'
-	# 		)
-	# 	),
-	# 		yaxis=dict(
-	# 			title='Number of Jobs',
-	# 			titlefont=dict(
-	# 			family='Courier New, monospace',
-	# 			size=18,
-	# 			color='#7f7f7f'
-	# 		)
-	# 	)
-	# 	)
-	# 	fig = go.Figure(data=data, layout=layout)
-	# 	unique_url = py.plot(fig, filename = 'SRPT_NumJobsInSys: Case1')
-
-	# 	#-----------------------------------------------------------------------------#
-	# 	# Average jobs/class
-	# 	trace1 = go.Bar(y= MachineClass.AvgNumJobsArray)
+		# Average jobs/class
+		trace1 = go.Bar(y= MachineClass.AvgNumJobsArray)
 		
-	# 	data1 = [trace1]
-	# 	layout1 = go.Layout(
-	# 		title='Average Number of Jobs Per Class',
-	# 		xaxis=dict(
-	# 			title='Classes',
-	# 			range=[1,numClasses],              # set range
-	# 			titlefont=dict(
-	# 			family='Courier New, monospace',
-	# 			size=18,
-	# 			color='#7f7f7f'
-	# 		)
-	# 	),
-	# 		yaxis=dict(
-	# 			title='Number of Jobs',
-	# 			titlefont=dict(
-	# 			family='Courier New, monospace',
-	# 			size=18,
-	# 			color='#7f7f7f'
-	# 		)
-	# 	)
-	# 	)
-	# 	fig1 = go.Figure(data=data1, layout=layout1)
-	# 	unique_url1 = py.plot(fig1, filename = 'SRPT_NumJobsInSysPerClass: Case1')
+		data1 = [trace1]
+		layout1 = go.Layout(
+			title='Average Number of Jobs Per Class',
+			xaxis=dict(
+				title='Classes',
+				range=[0.5,numClasses],              # set range
+				titlefont=dict(
+				family='Courier New, monospace',
+				size=18,
+				color='#7f7f7f'
+			)
+		),
+			yaxis=dict(
+				title='Number of Jobs',
+				titlefont=dict(
+				family='Courier New, monospace',
+				size=18,
+				color='#7f7f7f'
+			)
+		)
+		)
+		fig1 = go.Figure(data=data1, layout=layout1)
+		unique_url1 = py.plot(fig1, filename = 'SRPT_NumJobsInSysPerClass: Case1')
 
 	def calcVariance(self, List, avg):
 		var = 0
@@ -278,26 +308,37 @@ class GUI(Tk):
 
 		self.printParams(I.valuesList[0],					#load
 						 'Exponential',						#arrival
-						 I.valuesList[1], I.distList[1], 	#processing rate
-						 I.valuesList[2],					#error min
-						 I.valuesList[3],					#error max
-						 I.valuesList[4], 					#num Classes
-						 I.valuesList[5])					#sim time
-
+						 I.valuesList[2], I.distList[1], 	#processing rate
+						 I.valuesList[3],					#error min
+						 I.valuesList[4],					#error max
+						 I.valuesList[5], 					#num Classes
+						 I.valuesList[6])					#sim time
 		main.timesClicked = 0
 		
 		# Start process
 		MC = MachineClass(self)
 		MC.run(	I.valuesList[0],				#load
 				'Exponential',					#arrival
-				I.valuesList[1], I.distList[1],	# proc
-				I.valuesList[2],				# error min
-				I.valuesList[3],				# error max
-				I.valuesList[4],				# num class
-				I.valuesList[5])				# sim time
+				I.valuesList[2], I.distList[1],	# proc
+				I.valuesList[3],				# error min
+				I.valuesList[4],				# error max
+				I.valuesList[5],				# num class
+				I.valuesList[6])				# sim time
 
-		self.displayAverageData(I.valuesList[4])
-		#self.saveData()
+		self.saveParams(I.valuesList[0],		#load
+					I.valuesList[1], 				# arrival rate
+					'Exponential',					# arrival dist
+					I.valuesList[2], I.distList[1],	# processing
+					I.valuesList[3], 				# error min
+					I.valuesList[4],				# error max
+					I.valuesList[5], 				# num classes
+					I.valuesList[6],				# sim time
+					JobClass.BPArray[0],			# alpha
+					JobClass.BPArray[1],			# lower
+					JobClass.BPArray[2])			# upper		
+
+		self.displayAverageData(I.valuesList[5])
+		#self.saveData(event)
 		self.updateStatusBar("Simulation complete.")
 
 
@@ -322,13 +363,13 @@ class Input(LabelFrame):
 		self.errorMessage = StringVar()
 		self.comboboxVal = StringVar()
 
-		self.loadInput.set(0.7)       		 	   	##################################CHANGE LATER
+		self.loadInput.set(0.9)       		 	   	##################################CHANGE LATER
 		#self.arrivalRateInput.set(1.0)         	 ##################################CHANGE LATER
 		self.processingRateInput.set(0.5)   	    ##################################CHANGE LATER
-		self.percentErrorMinInput.set(-20)          ##################################CHANGE LATER
-		self.percentErrorMaxInput.set(20)          ##################################CHANGE LATER
+		self.percentErrorMinInput.set(-50)          ##################################CHANGE LATER
+		self.percentErrorMaxInput.set(0)          ##################################CHANGE LATER
 		self.numberOfClassesInput.set(10)			##################################CHANGE LATER
-		self.simLengthInput.set(10000000.0)           ##################################CHANGE LATER
+		self.simLengthInput.set(1000000.0)           ##################################CHANGE LATER
 
 		self.grid_columnconfigure(0, weight=2)
 		self.grid_columnconfigure(1, weight=2)
@@ -422,24 +463,34 @@ class Input(LabelFrame):
 		try:
 				load = self.loadInput.get()
 				#arrivalRate = self.arrivalRateInput.get()
-				processingRate = self.processingRateInput.get()
+				#processingRate = self.processingRateInput.get()
 				percentErrorMin = self.percentErrorMinInput.get()
 				percentErrorMax = self.percentErrorMaxInput.get()
-				numberOfClasses = self.numberOfClassesInput.get()
+				numClasses = self.numberOfClassesInput.get()
 				maxSimLength = self.simLengthInput.get()
 		except ValueError:
 				self.errorMessage.set("One of your inputs is an incorrect type, try again.")
 				return 1
+
+		try:
+			arrRate = float(self.arrivalRateInput.get())
+		except ValueError:
+			arrRate = 0.0
+		try:
+			procRate = float(self.processingRateInput.get())
+		except ValueError:
+			procRate = 0.0
+
 		if load <= 0.0:
 				self.errorMessage.set("Load must be non-zero value!")
 				return 1
 		#if arrivalRate <= 0.0:
 		#		self.errorMessage.set("Arrival rate must be non-zero value!")
 		#		return 1
-		if processingRate <= 0.0:
-				self.errorMessage.set("Processing rate must be non-zero value!")
-				return 1
-		if numberOfClasses < 1.0:
+		#if processingRate <= 0.0:
+		#		self.errorMessage.set("Processing rate must be non-zero value!")
+		#		return 1
+		if numClasses < 1.0:
 				self.errorMessage.set("There must be at least one class!")
 				return 1		
 		if maxSimLength <= 0.0:
@@ -447,7 +498,7 @@ class Input(LabelFrame):
 				return 1
 		else:
 				self.errorMessage.set("")
-				Input.valuesList = [load, processingRate, percentErrorMin, percentErrorMax, numberOfClasses, maxSimLength]
+				Input.valuesList = [load, arrRate, procRate, percentErrorMin, percentErrorMax, numClasses, maxSimLength]
 				return 0
 
 	def getDropDownValues(self):
@@ -839,12 +890,17 @@ class JobClass(object):
 			self.L = float(self.popup.paramArray[1])		# Smallest job size
 			self.U = float(self.popup.paramArray[2])		# Largest job size
 			JobClass.BPArray = [self.alpha, self.L, self.U]
-	
+
+			GUI.writeToConsole(self.master, "Alpha = %s \nLower Bound = %s \nUpper Bound = %s" %(self.alpha, self.L, self.U))
+			GUI.writeToConsole(self.master, "----------------------------------------------------------------------\n\n")	
+
 		x = random.uniform(0.0, 1.0)
 		# reassigning 
 		alpha = JobClass.BPArray[0]
 		L = JobClass.BPArray[1]
 		U = JobClass.BPArray[2]
+
+		#GUI.writeToConsole(self.master, "Alpha = %s \nLower Bound = %s \nUpper Bound = %s" %(alpha, L, U))
 
 		paretoNumerator = float(-(x*(U**alpha) - x*(L**alpha) - (U**alpha)))
 		paretoDenominator = float((U**alpha) * (L**alpha))
