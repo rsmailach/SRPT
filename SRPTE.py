@@ -48,8 +48,8 @@ class GUI(Tk):
 		self.master = master        # reference to parent
 		self.statusText = StringVar()
 		global SEED
-		SEED = random.randint(0, 1000000000)
-		#SEED = 295588362
+		#SEED = random.randint(0, 1000000000)
+		SEED = 58159097
 		random.seed(SEED)
 
 		# Create the input frame
@@ -211,7 +211,7 @@ class GUI(Tk):
 		self.writeToConsole('Variance of processing time %s' %VarProcTime)
 		self.writeToConsole('Average percent error %.4f\n' %AvgPercError)
 		#self.writeToConsole('Request order: %s' % ArrivalClass.JobOrderIn)
-		self.writeToConsole('Service order: %s\n\n' % MachineClass.JobOrderOut)
+		#self.writeToConsole('Service order: %s\n\n' % MachineClass.JobOrderOut)
 
 	def stopSimulation(self, event):
 		MachineClass.StopSim = True
@@ -704,6 +704,7 @@ class JobClass(object):
 				self.processRate = 1/float(procMean)
 		else:
 			self.processRate = procRate
+			
 		self.arrivalRate = float(load) * self.processRate
 
 	# Dictionary of service distributions
@@ -757,7 +758,7 @@ class JobClass(object):
 
 	# Generates a percent error for processing time
 	def generateError(self, percErrorMin, percErrorMax):
-		self.percentError = random.randint(percErrorMin, percErrorMax)
+		self.percentError = random.uniform(percErrorMin, percErrorMax)
 		return self.percentError
 
 	# Sets all processing times for job

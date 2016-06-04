@@ -16,9 +16,9 @@ from math import log
 import plotly.plotly as py
 from plotly.graph_objs import Scatter
 import plotly.graph_objs as go
-from bokeh.plotting import figure, output_file, show
-from bokeh.charts import Bar, output_file, show
-from collections import OrderedDict
+#from bokeh.plotting import figure, output_file, show
+#from bokeh.charts import Bar, output_file, show
+#from collections import OrderedDict
 
 import copy
 import random
@@ -238,7 +238,7 @@ class GUI(Tk):
 			title='Average Number of Jobs Per Class',
 			xaxis=dict(
 				title='Classes',
-				range=[0.5,numClasses],              # set range
+				range=[0.5,numClasses+0.5],              # set range
 				titlefont=dict(
 				family='Courier New, monospace',
 				size=18,
@@ -326,9 +326,9 @@ class GUI(Tk):
 				I.valuesList[6])				# sim time
 
 		self.saveParams(I.valuesList[0],		#load
-					I.valuesList[1], 				# arrival rate
+					'?', 				# arrival rate
 					'Exponential',					# arrival dist
-					I.valuesList[2], I.distList[1],	# processing
+					'?', I.distList[1],	# processing
 					I.valuesList[3], 				# error min
 					I.valuesList[4],				# error max
 					I.valuesList[5], 				# num classes
@@ -369,7 +369,7 @@ class Input(LabelFrame):
 		self.percentErrorMinInput.set(-50)          ##################################CHANGE LATER
 		self.percentErrorMaxInput.set(0)          ##################################CHANGE LATER
 		self.numberOfClassesInput.set(10)			##################################CHANGE LATER
-		self.simLengthInput.set(1000000.0)           ##################################CHANGE LATER
+		self.simLengthInput.set(10000000.0)           ##################################CHANGE LATER
 
 		self.grid_columnconfigure(0, weight=2)
 		self.grid_columnconfigure(1, weight=2)
@@ -910,7 +910,7 @@ class JobClass(object):
 
 	# Generates a percent error for processing time
 	def generateError(self, percErrorMin, percErrorMax):
-		self.percentError = random.randint(percErrorMin, percErrorMax)
+		self.percentError = random.uniform(percErrorMin, percErrorMax)
 		return self.percentError
 
 	# Sets all processing times for job
