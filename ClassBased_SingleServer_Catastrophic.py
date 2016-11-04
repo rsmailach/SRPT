@@ -1,10 +1,11 @@
 #----------------------------------------------------------------------#
-# SRPTE.py
+# ApproxSRPTE.py
 #
 # This application simulates a single server with Poisson arrivals
 # and processing times of a general distribution. There are errors in
-# time estimates within a range. Jobs are serviced in order of shortest 
-# remaining processing time.
+# time estimates within a range. Arrivals are assigned to SRPT classes
+# using the methods described in Adaptive and Scalable Comparison
+# Scheduling.
 #
 # Rachel Mailach
 #----------------------------------------------------------------------#
@@ -19,24 +20,23 @@ from math import log
 import plotly.plotly as py
 from plotly.graph_objs import Scatter
 import plotly.graph_objs as go
-#from scipy import integrate as integrate
+#from bokeh.plotting import figure, output_file, show
+#from bokeh.charts import Bar, output_file, show
+#from collections import OrderedDict
+
 import copy
 import random
 import csv
 import operator
+
 import sqlite3
 import pandas
 
-conn=sqlite3.connect('SingleServerDatabase_SRPTE.db')
+conn=sqlite3.connect('SingleServerDatabase_ASRPTE.db')
 
 NumJobs = []
 AvgNumJobs = []
 NumJobsTime = []
-TimeSys = []
-ProcTime = []
-PercError = []
-
-
 
 #----------------------------------------------------------------------#
 # Class: GUI
@@ -53,14 +53,15 @@ class GUI(Tk):
 		#SEED = random.randint(0, 1000000000)
 		SEED = 994863731
 		random.seed(SEED)
+		
 
 		# Create the input frame
 		self.frameIn = Input(self)
-		self.frameIn.pack(side=TOP, fill=BOTH, padx = 5, pady =5, ipadx = 5, ipady = 5)     
+		self.frameIn.pack(side=TOP, fill=X, expand=False, padx = 5, pady =5, ipadx = 5, ipady = 5)     
 
 		# Create the output frame
 		self.frameOut = Output(self)
-		self.frameOut.pack(side=TOP, fill=BOTH, padx = 5, pady =5, ipadx = 5, ipady = 5)
+		self.frameOut.pack(side=TOP, fill=BOTH, expand=True, padx = 5, pady =5, ipadx = 5, ipady = 5)
 
 		# Bind simulate button
 		self.bind("<<input_simulate>>", self.submit)
@@ -96,11 +97,16 @@ class GUI(Tk):
 		self.console.grid(column=0, row=0)
 		self.scrollbar.grid(column=1, row=0, sticky='NS')
 
+		#DOES NOTHING??
+		self.grid_columnconfigure(0, weight=1) 
+		self.grid_rowconfigure(0, weight=1)
+
+
 	def writeToConsole(self, text = ' '):
 		self.console.config(state=NORMAL)       # make console editable
 		self.console.insert(END, '%s\n'%text)
 		self.update()
-		self.console.yview(END)					# auto-scroll
+		self.console.yview(END)					# auto-scroll		
 		self.console.config(state=DISABLED)     # disable (non-editable) console
 
 	def saveData(self, event):
@@ -120,8 +126,8 @@ class GUI(Tk):
 	# Empty arrivals file at the begining of each simulation
 	def clearSavedArrivals(self):
 		with open("Arrivals.txt", "w") as myFile:
-			myFile.write('Job Name,      Arrival Time,      RPT,       ERPT' + '\n')
-			myFile.close()
+			myFile.write('JOB NAME,    ARRIVAL TIME,    RPT,     ERPT,     CLASS' + '\n')
+		myFile.close()
 
 	def clearConsole(self, event):
 		self.console.config(state=NORMAL)       # make console editable
@@ -132,9 +138,20 @@ class GUI(Tk):
 		self.statusText.set(text)
 	
 	def printIntro(self):
-		self.writeToConsole("SRPTE \n\n This application simulates a single server with Poisson arrivals and processing times of a general distribution. Each arrival has an estimation error within a percent error taken as input. Jobs are serviced in order of shortest remaining processing time.")
+		self.writeToConsole("Approximate SRPTE \n\n This application simulates a single server with Poisson arrivals and processing times of a general distribution. There are errors in time estimates within a range. Arrivals are assigned to SRPT classes using the methods described in Adaptive and Scalable Comparison Scheduling.")
 
-	def saveParams(self, load, arrRate, arrDist, procRate, procDist, percErrorMin, percErrorMax, simLength, alpha, lower, upper):
+	def printParams(self, load, arrDist, procRate, procDist, percErrorMin, percErrorMax, numClasses, simLength): 
+		self.writeToConsole("--------------------------------------------------------------------------------")
+		self.writeToConsole("PARAMETERS:")
+		self.writeToConsole("Load = %.4f"%load)
+		#self.writeToConsole("Arrival Rate = %.4f"%arrRate)
+		self.writeToConsole("Arrival Distribution = %s"%arrDist)
+		self.writeToConsole("Processing Rate = %.4f, Processing Distribution = %s"%(procRate, str(procDist)))
+		self.writeToConsole("% Error  = " + " %.4f, %.4f"%(percErrorMin, percErrorMax))
+		self.writeToConsole("Number of Classes = %d"%numClasses)
+		self.writeToConsole("Simulation Length = %.4f"%simLength)
+
+	def saveParams(self, load, arrRate, arrDist, procRate, procDist, percErrorMin, percErrorMax, numClasses, simLength, alpha, lower, upper):
 		##params = pandas.DataFrame(columns=('seed', 'numServers', 'load', 'arrRate', 'arrDist', 'procRate', 'procDist', 'alpha', 'lower', 'upper', 'percErrorMin', 'percErrorMax', 'simLength'))
 		print (SEED)
 		params = pandas.DataFrame({	'seed' : [SEED],
@@ -148,6 +165,7 @@ class GUI(Tk):
 									'upper' : [upper],
 									'percErrorMin' : [percErrorMin],
 									'percErrorMax' : [percErrorMax],
+									'numClasses' : [numClasses],
 									'simLength' : [simLength],
 									'avgNumJobs' : [MachineClass.AvgNumJobs]
 									})
@@ -155,16 +173,34 @@ class GUI(Tk):
 		params.to_sql(name='parameters', con=conn, if_exists='append')
 		print (params)
 
-	def printParams(self, load, arrDist, procRate, procDist, percErrorMin, percErrorMax, simLength): 
-		self.writeToConsole("--------------------------------------------------------------------------------")
-		self.writeToConsole("PARAMETERS:")
-		self.writeToConsole("Load = %.4f"%load)
-		#self.writeToConsole("Arrival Rate = %.4f"%arrRate)
-		self.writeToConsole("Arrival Distribution = %s"%arrDist)
-		self.writeToConsole("Processing Rate = %.4f, Processing Distribution = %s"%(procRate, str(procDist)))
-		self.writeToConsole("% Error  = " + u"\u00B1" + " %.4f, %.4f"%(percErrorMin, percErrorMax))
-		self.writeToConsole("Simulation Length = %.4f\n\n"%simLength)
+	# def plotNumJobsInSys(self, numClasses):
+	# 	# SCATTER PLOT
+	# 	output_file("Scatter_Case24")
+	# 	scatter = figure(title = "Average Number of Jobs Over Time",
+	# 					x_axis_label = "Time",
+	# 					y_axis_label = "Number of Jobs")
+	# 	#trace0.scatter(NumJobsTime, NumJobs)
+	# 	scatter.line(NumJobsTime, NumJobs)
+	# 	scatter.circle(NumJobsTime, NumJobs, size=1)
+	# 	show(scatter)
 
+
+ 
+	# 	#-----------------------------------------------------------------------------#
+	# 	# BLOCK DIAGRAM
+	# 	output_file("Bar_Case24")
+
+	# 	classRange = range(1, numClasses + 1)
+	# 	classes = [format(i,'02d') for i in classRange]
+
+	# 	# remove placeholder element
+	# 	MachineClass.AvgNumJobsArray.pop(0)
+
+	# 	dictionary = {'number of jobs': MachineClass.AvgNumJobsArray, 'classes': classes}
+	# 	df = pandas.DataFrame(data=dictionary)
+
+	# 	bar = Bar(df, 'classes', values='number of jobs', title="Average Number of Jobs Per Class")
+	# 	show(bar)
 	def plotNumJobsInSys(self):
 		py.sign_in('mailacrs','wowbsbc0qo')
 		trace0 = Scatter(x=NumJobsTime, y=NumJobs)
@@ -189,9 +225,9 @@ class GUI(Tk):
 		)
 		)
 		fig = go.Figure(data=data, layout=layout)
-		unique_url = py.plot(fig, filename = 'SRPT_NumJobs')
+		unique_url = py.plot(fig, filename = 'ClassBased_NumJobs')
 
-	def plotAvgNumJobsInSys(self):
+	def plotAvgNumJobsInSys(self, numClasses):
 		py.sign_in('mailacrs','wowbsbc0qo')
 		trace0 = Scatter(x=NumJobsTime, y=AvgNumJobs)
 		data = [trace0]
@@ -215,7 +251,35 @@ class GUI(Tk):
 		)
 		)
 		fig = go.Figure(data=data, layout=layout)
-		unique_url = py.plot(fig, filename = 'SRPT_AvgNumJobs')
+		unique_url = py.plot(fig, filename = 'ClassBased_AvgNumJobs')
+
+		#-----------------------------------------------------------------------------#
+		# Average jobs/class
+		trace1 = go.Bar(y= MachineClass.AvgNumJobsArray)
+		
+		data1 = [trace1]
+		layout1 = go.Layout(
+			title='Average Number of Jobs Per Class',
+			xaxis=dict(
+				title='Classes',
+				range=[0.5,numClasses+0.5],              # set range
+				titlefont=dict(
+				family='Courier New, monospace',
+				size=18,
+				color='#7f7f7f'
+			)
+		),
+			yaxis=dict(
+				title='Number of Jobs',
+				titlefont=dict(
+				family='Courier New, monospace',
+				size=18,
+				color='#7f7f7f'
+			)
+		)
+		)
+		fig1 = go.Figure(data=data1, layout=layout1)
+		unique_url1 = py.plot(fig1, filename = 'ClassBased_NumJobsPerClass')
 
 	def calcVariance(self, List, avg):
 		var = 0
@@ -223,66 +287,48 @@ class GUI(Tk):
 			var += (avg - i)**2
 		return var/len(List)
 
-	def displayAverageData(self):
-		
-		##AvgNumJobs = int(float(sum(NumJobs))/len(NumJobs))
-		AvgNumJobs = MachineClass.AvgNumJobs
-		AvgTimeSys = float(sum(TimeSys))/len(TimeSys)
-		AvgProcTime = float(sum(ProcTime))/len(ProcTime)
-		VarProcTime = self.calcVariance(ProcTime, AvgProcTime)
-		AvgPercError = float(sum(PercError))/len(PercError)
-
-		self.writeToConsole('\n\nAverage number of jobs in the system %s' %AvgNumJobs)
-		self.writeToConsole('Average time in system, from start to completion is %s' %AvgTimeSys)
-		self.writeToConsole('Average processing time, based on generated service times is %s' %AvgProcTime)
-		self.writeToConsole('Variance of processing time %s' %VarProcTime)
-		self.writeToConsole('Average percent error %.4f\n' %AvgPercError)
-		#self.writeToConsole('Request order: %s' % ArrivalClass.JobOrderIn)
-		#self.writeToConsole('Service order: %s\n\n' % MachineClass.JobOrderOut)
-
 	def stopSimulation(self, event):
 		MachineClass.StopSim = True
-
+				
 	def submit(self, event):
 		self.updateStatusBar("Simulating...")
 		self.clearSavedArrivals()
 		I = Input(self)     
 
-		self.printParams(I.valuesList[0], 					#load
-						 'Exponential',						#arrival dist
-						 #I.valuesList[1],					# arrival rate
-						 I.valuesList[2], I.distList[1],	#processing rate
-						 I.valuesList[3], 					#error min
-						 I.valuesList[4],					#error max 
-						 I.valuesList[5])					#sim time
-
+		self.printParams(I.valuesList[0],					#load
+						 'Exponential',						#arrival
+						 I.valuesList[2], I.distList[1], 	#processing rate
+						 I.valuesList[3],					#error min
+						 I.valuesList[4],					#error max
+						 I.valuesList[5], 					#num Classes
+						 I.valuesList[6])					#sim time
 		main.timesClicked = 0
 		
 		# Start process
 		MC = MachineClass(self)
-		MC.run(	I.valuesList[0],				# load 
-				'Exponential',					# arrival
-				#I.valuesList[1],					# arrival rate
-				I.valuesList[2], I.distList[1],	# processing
-				I.valuesList[3], 				# error min
+		MC.run(	I.valuesList[0],				#load
+				'Exponential',					#arrival
+				I.valuesList[2], I.distList[1],	# proc
+				I.valuesList[3],				# error min
 				I.valuesList[4],				# error max
-				I.valuesList[5])				# sim time
+				I.valuesList[5],				# num class
+				I.valuesList[6])				# sim time
 
-		self.saveParams(I.valuesList[0],			#load
-					'?', 							# arrival rate
+		self.saveParams(I.valuesList[0],		#load
+					'?', 				# arrival rate
 					'Exponential',					# arrival dist
-					'?', I.distList[1],				# processing
+					'?', I.distList[1],	# processing
 					I.valuesList[3], 				# error min
 					I.valuesList[4],				# error max
-					I.valuesList[5],				# sim time
+					I.valuesList[5], 				# num classes
+					I.valuesList[6],				# sim time
 					JobClass.BPArray[0],			# alpha
 					JobClass.BPArray[1],			# lower
-					JobClass.BPArray[2])			# upper
+					JobClass.BPArray[2])			# upper		
 
-		self.displayAverageData()
 		self.plotNumJobsInSys()
-		self.plotAvgNumJobsInSys()
-		#self.saveData()
+		self.plotAvgNumJobsInSys(I.valuesList[5])
+		#self.saveData(event)
 		self.updateStatusBar("Simulation complete.")
 
 
@@ -302,16 +348,18 @@ class Input(LabelFrame):
 		self.processingRateInput = DoubleVar()
 		self.percentErrorMinInput = DoubleVar()
 		self.percentErrorMaxInput = DoubleVar()
+		self.numberOfClassesInput = IntVar()
 		self.simLengthInput = DoubleVar()
 		self.errorMessage = StringVar()
 		self.comboboxVal = StringVar()
 
-		self.loadInput.set(0.95)       		 	   	##################################CHANGE LATER
+		self.loadInput.set(0.70)       		 	   	##################################CHANGE LATER
 		#self.arrivalRateInput.set(1.0)         	 ##################################CHANGE LATER
 		self.processingRateInput.set(0.5)   	    ##################################CHANGE LATER
 		self.percentErrorMinInput.set(-50)          ##################################CHANGE LATER
 		self.percentErrorMaxInput.set(0)          ##################################CHANGE LATER
-		self.simLengthInput.set(5000000.0)
+		self.numberOfClassesInput.set(10)			##################################CHANGE LATER
+		self.simLengthInput.set(5000000.0)           ##################################CHANGE LATER
 
 		self.grid_columnconfigure(0, weight=2)
 		self.grid_columnconfigure(1, weight=2)
@@ -322,7 +370,7 @@ class Input(LabelFrame):
 		self.grid_rowconfigure(0, weight=1)
 
 		# Labels
-		labels = ['System Load', 'Interarrival Rate (' + u'\u03bb' + ')', 'Processing Rate (' + u'\u03bc' + ')', '% Error' , 'Simulation Length']
+		labels = ['System Load', 'Interarrival Rate (' + u'\u03bb' + ')', 'Processing Rate (' + u'\u03bc' + ')', '% Error', 'Number of Classes', 'Simulation Length']
 		r=0
 		c=0
 		for elem in labels:
@@ -340,18 +388,18 @@ class Input(LabelFrame):
 		self.entry_2 = Entry(self, textvariable = self.processingRateInput)
 		self.entry_3a = Entry(self, textvariable = self.percentErrorMinInput, width = 5)
 		self.entry_3b = Entry(self, textvariable = self.percentErrorMaxInput, width = 5)
-		self.entry_4 = Entry(self, textvariable = self.simLengthInput)
-		self.entry_0.grid(row = 0, column = 1)
-		self.entry_1.grid(row = 1, column = 1)
-		self.entry_2.grid(row = 2, column = 1)
+		self.entry_4 = Entry(self, textvariable = self.numberOfClassesInput)
+		self.entry_5 = Entry(self, textvariable = self.simLengthInput)
+		self.entry_0.grid(row = 0, column = 1, columnspan = 4)	
+		self.entry_1.grid(row = 1, column = 1, columnspan = 4)
+		self.entry_2.grid(row = 2, column = 1, columnspan = 4)
 		self.entry_3a.grid(row = 3, column = 2, sticky = E)
 		self.entry_3b.grid(row = 3, column = 4, sticky = W)
-		self.entry_4.grid(row = 4, column = 1)
-		
-
-		# Disable interarrival time
-		self.entry_1.delete(0, 'end')
-		self.entry_1.configure(state = 'disabled')
+		self.entry_4.grid(row = 4, column = 1, columnspan = 4)
+		self.entry_5.grid(row = 5, column = 1, columnspan = 4)
+		self.loadInput.trace('w', self.entryBoxChange)
+		self.arrivalRateInput.trace('w', self.entryBoxChange)
+		self.refreshLoad()
 
 		# Distribution Dropdowns
 		self.distributions = ('Select Distribution', 'Poisson', 'Exponential', 'Uniform', 'Bounded Pareto', 'Custom')
@@ -363,7 +411,7 @@ class Input(LabelFrame):
 		self.comboBox_2.grid(row = 2, column = 5)
 
 		self.comboboxVal.trace("w", self.selectionChange) # refresh on change
-		self.refreshComboboxes()
+		self.refreshComboboxes()		
 
 		# Simulate Button
 		self.simulateButton = Button(self, text = "SIMULATE", command = self.onButtonClick)
@@ -378,14 +426,12 @@ class Input(LabelFrame):
 			self.entry_1.configure(state = 'disabled')
 		else:
 			self.entry_1.configure(state = 'normal')
-			self.arrivalRateInput.set(self.arrRateDefault)
 
 		if len(self.entry_1.get()) > 0:
 			self.entry_0.delete(0, 'end')
 			self.entry_0.configure(state = 'disabled')
 		else:
 			self.entry_0.configure(state = 'normal')
-			self.loadInput.set(self.loadDefault)
 
 	def selectionChange(self, name, index, mode):
 		self.refreshComboboxes()
@@ -393,65 +439,68 @@ class Input(LabelFrame):
 	def refreshComboboxes(self):
 		selection = self.comboBox_2.get()
 		if selection == 'Bounded Pareto':
-			#self.entry_2.delete(0, 'end')
 			self.entry_2.configure(state = 'disabled')
 		else:
-			self.entry_2.configure(state = 'normal')
-			#self.processingRateInput.set(self.procRateDefault)
+			self.entry_2.configure(state = 'normal')		
 
 	def onButtonClick(self):
 		if (self.getNumericValues() == 0) and (self.getDropDownValues() == 0):
 				# Send to submit button in main 
 				self.simulateButton.event_generate("<<input_simulate>>")
 
+
 	def getNumericValues(self):
 		try:
-			load = self.loadInput.get()
-			#arrivalRate = self.arrivalRateInput.get()
-			processingRate = self.processingRateInput.get()
-			percentErrorMin = self.percentErrorMinInput.get()
-			percentErrorMax = self.percentErrorMaxInput.get()
-			maxSimLength = self.simLengthInput.get()
+				load = self.loadInput.get()
+				#arrivalRate = self.arrivalRateInput.get()
+				processingRate = self.processingRateInput.get()
+				percentErrorMin = self.percentErrorMinInput.get()
+				percentErrorMax = self.percentErrorMaxInput.get()
+				numClasses = self.numberOfClassesInput.get()
+				maxSimLength = self.simLengthInput.get()
 		except ValueError:
 				self.errorMessage.set("One of your inputs is an incorrect type, try again.")
 				return 1
-		#try:
-		#	arrRate = float(self.arrivalRateInput.get())
-		#except ValueError:
-		#	arrRate = 0.0
-		#try:
-		#	procRate = float(self.processingRateInput.get())
-		#except ValueError:
-		#	procRate = 0.0
+
+		# try:
+		# 	arrRate = float(self.arrivalRateInput.get())
+		# except ValueError:
+		# 	arrRate = 0.0
+		# try:
+		# 	procRate = float(self.processingRateInput.get())
+		# except ValueError:
+		# 	procRate = 0.0
 
 		if load <= 0.0:
-			self.errorMessage.set("System load must be a non-zero value!")
-			return 1
+				self.errorMessage.set("Load must be non-zero value!")
+				return 1
 		#if arrivalRate <= 0.0:
-		#	self.errorMessage.set("Arrival rate must be a non-zero value!")
-		#	return 1
+		#		self.errorMessage.set("Arrival rate must be non-zero value!")
+		#		return 1
 		#if processingRate <= 0.0:
-		#	self.errorMessage.set("Processing rate must be a non-zero value!")
-		#	return 1
+		#		self.errorMessage.set("Processing rate must be non-zero value!")
+		#		return 1
+		if numClasses < 1.0:
+				self.errorMessage.set("There must be at least one class!")
+				return 1		
 		if maxSimLength <= 0.0:
-			self.errorMessage.set("Simulation length must be a non-zero value!")
-			return 1
+				self.errorMessage.set("Simulation length must be non-zero value!")
+				return 1
 		else:
-			self.errorMessage.set("")
-			Input.valuesList = [load, 0.0, processingRate, percentErrorMin, percentErrorMax, maxSimLength]
-			return 0
+				self.errorMessage.set("")
+				Input.valuesList = [load, 0.0, processingRate, percentErrorMin, percentErrorMax, numClasses, maxSimLength]
+				return 0
 
 	def getDropDownValues(self):
 		comboBox1Value = self.comboBox_1.get()
 		comboBox2Value = self.comboBox_2.get()
 		if comboBox2Value == 'Select Distribution':
-			self.errorMessage.set("You must select a distribution for the processing rate")
-			return 1
+				self.errorMessage.set("You must select a distribution for the processing rate")
+				return 1
 		else:
-			self.errorMessage.set("")
-			Input.distList = [comboBox1Value, comboBox2Value]
-			return 0
-
+				self.errorMessage.set("")
+				Input.distList = [comboBox1Value, comboBox2Value]
+				return 0
 
 #----------------------------------------------------------------------#
 # Class: Output
@@ -479,7 +528,7 @@ class Output(LabelFrame):
 
 		# Stop Button
 		self.stopButton = Button(buttonFrame, text = "STOP SIMULATION", command = self.onStopButtonClick)
-		self.stopButton.grid(row = 2, column = 2)
+		self.stopButton.grid(row = 2, column = 2)		
 
 	def onClearButtonClick(self):
 		# Clear console
@@ -563,6 +612,7 @@ class CustomDist(object):
 		print ("".join(self.stringList))
 		return "".join(self.stringList)
 
+
 #----------------------------------------------------------------------#
 # Class: BoundedParetoDist
 #
@@ -640,7 +690,7 @@ class BoundedParetoDist(object):
 			BoundedParetoDist.Array = [self.a, self.l, self.u]
 			return 0
 
-
+		
 #----------------------------------------------------------------------#
 # Class: Node
 #
@@ -652,7 +702,6 @@ class Node():
 		self.job = job
 		self.nextNode = nextNode
 
-
 #----------------------------------------------------------------------#
 # Class: LinkedList
 #
@@ -662,18 +711,23 @@ class Node():
 #----------------------------------------------------------------------#
 class LinkedList(object):
 	Size = 0
+	NumJobArrayByClass = []
+	Count = 0
 
 	def __init__(self, head = None):
 		self.head = head
+		LinkedList.NumJobArrayByClass[:] = []
+		LinkedList.Count = 0
+		LinkedList.Size = 0
 
-	# Insert job into queue (sorted by ERPT)
-	def insert(self, job):
+	# Insert job into queue (sorted by class, then name)
+	def insertByClass(self, job):
 		current = self.head		# node iterator, starts at head
 		previous = None
 		if (current == None):	# if queue is empty, set current job as head
 			self.head = Node(job, None)
 		else:
-			while (current != None) and (job.ERPT > current.job.ERPT):
+			while (current != None) and (job.priorityClass >= current.job.priorityClass) and (job.name > current.job.name):
 				previous = current 				# prev = node[i]
 				current = current.nextNode 		# current = node[i+1]
 			
@@ -685,22 +739,77 @@ class LinkedList(object):
 
 		LinkedList.Size += 1
 
+	def insertByERPT(self, job, numClasses):
+		current = self.head		# node iterator, starts at head
+		previous = None
+		if (current == None):	# if queue is empty, set current job as head
+			self.head = Node(job, None)
+		else:
+			while (current != None) and (job.priorityClass >= current.job.priorityClass) and (job.ERPT > current.job.ERPT):
+				previous = current 				# prev = node[i]
+				current = current.nextNode 		# current = node[i+1]
+			
+			# Insert new node after previous before current
+			if (previous == None):
+				self.head = Node(job, current)
+			else:
+				previous.nextNode = Node(job, current)
+
+		LinkedList.Size += 1	
+
+	def insertByLCFS(self, job, numClasses):
+		current = self.head		# node iterator, starts at head
+		previous = None
+		if (current == None):	# if queue is empty, set current job as head
+			self.head = Node(job, None)
+		else:
+			while (current != None) and (current.job.priorityClass != numClasses):			# insert at front of last class
+				previous = current 				# prev = node[i]
+				current = current.nextNode 		# current = node[i+1]
+			
+			# Insert new node after previous (before current)
+			if (previous == None):
+				self.head = Node(job, current)
+			else:
+				previous.nextNode = Node(job, current)
+
+		LinkedList.Size += 1		
+
 	# Remove first item in queue
 	def removeHead(self):
 		if (LinkedList.Size > 0):
 			self.head = self.head.nextNode		# move head forward one node
 			LinkedList.Size -= 1
 		else:
-			GUI.writeToConsole(self.master, "ERROR: The linked list is already empty!")
+			print ("ERROR: The linked list is already empty!")
 
 	def clear(self):
+		LinkedList.Size = 0
 		self.head = None
 
 	def printList(self):
 		current = self.head
+		print ("---------------------")
+		print ("\nJOBS IN QUEUE:")
 		while (current != None):
-			print (current.job.name, current.job.ERPT)
+			print ("%s, class %s, ERPT = %.4f"%(current.job.name, current.job.priorityClass, current.job.ERPT))
 			current = current.nextNode
+
+
+	def countClassesQueued(self, numClasses):
+		if(LinkedList.Count == 0):
+			LinkedList.NumJobArrayByClass = [0] * (numClasses + 1)	# create array that holds number of jobs in each classes
+
+		# Iterate through number of classes and count number of jobs per class
+		for j in range(1, numClasses + 1):
+			current = self.head
+			while (current != None):
+				if current.job.priorityClass == j:
+					LinkedList.NumJobArrayByClass[j] += 1
+				elif current.job.priorityClass > numClasses:
+					LinkedList.NumJobArrayByClass[numClasses] += 1
+				current = current.nextNode
+		return LinkedList.NumJobArrayByClass
 
 
 #----------------------------------------------------------------------#
@@ -713,17 +822,17 @@ class LinkedList(object):
 #----------------------------------------------------------------------#
 class JobClass(object):
 	BPArray = []
-
+	
 	def __init__(self, master):
 		self.master = master
 		self.arrivalTime = 0
 		self.procTime = 0
 		self.RPT = 0		# Real Remaining Processing Time
 		self.ERPT = 0		# Estimated Remaining Processing Time
+		self.priorityClass = 100
 		self.percentError = 0
 		self.processRate = 0
 		self.arrivalRate = 0
-		#JobClass.BPArray = []
 
 	def setArrProcRates(self, load, procRate, procDist):
 		if procDist == 'Bounded Pareto':
@@ -735,7 +844,6 @@ class JobClass(object):
 				self.processRate = 1/float(procMean)
 		else:
 			self.processRate = procRate
-			
 		self.arrivalRate = float(load) * self.processRate
 
 	# Dictionary of service distributions
@@ -744,7 +852,7 @@ class JobClass(object):
 			'Poisson': random.expovariate(1.0/procRate),
 			'Exponential': random.expovariate(procRate),
 			'Uniform': random.uniform(0.0, procRate),
-			'Bounded Pareto': self.setBoundedPareto,
+			'Bounded Pareto': self.setBoundedPareto,			
 			'Custom': self.setCustomDist
 		}
 		if(procDist == 'Custom'):
@@ -757,7 +865,7 @@ class JobClass(object):
 	def setCustomDist(self, procRate):
 		if main.timesClicked == 0:
 			main.timesClicked += 1
-			self.popup = CustomDist(self.master)
+			self.popup=CustomDist(self.master)
 			self.master.wait_window(self.popup.top)
 			main.customEquation = self.popup.stringEquation
 		return eval(main.customEquation)
@@ -773,19 +881,22 @@ class JobClass(object):
 			self.U = float(self.popup.paramArray[2])		# Largest job size
 			JobClass.BPArray = [self.alpha, self.L, self.U]
 
-			
+			GUI.writeToConsole(self.master, "Alpha = %s \nLower Bound = %s \nUpper Bound = %s" %(self.alpha, self.L, self.U))
+			GUI.writeToConsole(self.master, "----------------------------------------------------------------------\n\n")	
+
 		x = random.uniform(0.0, 1.0)
 		# reassigning 
 		alpha = JobClass.BPArray[0]
 		L = JobClass.BPArray[1]
 		U = JobClass.BPArray[2]
 
+		#GUI.writeToConsole(self.master, "Alpha = %s \nLower Bound = %s \nUpper Bound = %s" %(alpha, L, U))
+
 		paretoNumerator = float(-(x*(U**alpha) - x*(L**alpha) - (U**alpha)))
 		paretoDenominator = float((U**alpha) * (L**alpha))
 		main.customEquation = (paretoNumerator/paretoDenominator)**(-1/alpha)
 		
 		return main.customEquation
-
 
 	# Generates a percent error for processing time
 	def generateError(self, percErrorMin, percErrorMax):
@@ -818,35 +929,51 @@ class JobClass(object):
 #----------------------------------------------------------------------#
 class MachineClass(object):
 	Queue = LinkedList()
+	PreviousJobs = []
+	LastClassPrevJobs = []
 	JobOrderOut = []
 	CurrentTime = 0.0
-	TimeUntilArrival = 0.0
+	NextArrival = 0.0
 	ServiceStartTime = 0
-	AvgNumJobs = 0
-	PrevTime = 0
-	PrevNumJobs = 0
+	ServiceFinishTime = 0
 	ServerBusy = False
-	StopSim = False
+	JobInService = None
+	StopSim = False	
+
+	PrevTime = 0
+	PrevTimeA = 0
+	PrevNumJobs = 0
+	AvgNumJobs = 0
+	PrevNumJobsArray = []
+	AvgNumJobsArray = []
+	counter = 0
+
 
 	def __init__(self, master):
 		self.master = master
-		MachineClass.ServerBusy = False
-		MachineClass.StopSim = False
 		MachineClass.Queue.clear()
-		LinkedList.Size = 0
+		MachineClass.PreviousJobs[:] = []
+		MachineClass.LastClassPrevJobs[:] = []
 		MachineClass.CurrentTime = 0.0
-		MachineClass.TimeUntilArrival = 0.0
+		MachineClass.NextArrival = 0.0
 		MachineClass.ServiceStartTime = 0
-		MachineClass.AvgNumJobs = 0
+		MachineClass.ServiceFinishTime = 0
+		MachineClass.ServerBusy = False
+		MachineClass.JobInService = None
+		MachineClass.StopSim = False
+
+
 		MachineClass.PrevTime = 0
+		MachineClass.PrevTimeA = 0
 		MachineClass.PrevNumJobs = 0
+		MachineClass.AvgNumJobs = 0		
+		MachineClass.PrevNumJobsArray[:] = []
+		MachineClass.AvgNumJobsArray[:] = []
+		MachineClass.counter = 0
 
 		NumJobs[:] = []
 		AvgNumJobs[:] = []
 		NumJobsTime[:] = []
-		TimeSys[:] = []
-		ProcTime[:] = []
-		PercError[:] = [] 
 		MachineClass.JobOrderOut[:] = []
 	
 		self.ctr = 0
@@ -872,6 +999,48 @@ class MachineClass(object):
 		currentJob.RPT -= serviceTime
 		currentJob.ERPT -= serviceTime
 
+	#def saveArrivals(self, job):
+	#	text = "%s,       %.4f,      %.4f,      %.4f,      %s"%(job.name, job.arrivalTime, job.RPT, job.ERPT, job.priorityClass) + "\n"
+	#	
+	#	with open("Arrivals.txt", "a") as myFile:
+	#		myFile.write(text)
+	#	myFile.close()
+
+	# Give arriving job a class and add it to the queue
+	def assignClass(self, numClasses, job, prevJobs, counterStart, counter):
+		# Remove oldest job from previous jobs list if there are too many
+		while len(prevJobs) > (numClasses - 1):
+			prevJobs.pop(0)
+
+		# Sort previous current job with previous jobs
+		self.SortedPrevJobs = []
+		self.SortedPrevJobs = list(prevJobs) 	# copy of prev jobs
+		self.SortedPrevJobs.append(job)							# append current job (not a copy)
+		self.SortedPrevJobs.sort(key=lambda JobClass: JobClass.ERPT)
+
+		iterator = counter
+		for j in self.SortedPrevJobs:
+			if j.name == job.name:
+				job.priorityClass = counterStart + counter
+			counter += iterator
+
+		# If job is in the last class, sort by ERPT
+		if (job.priorityClass == numClasses):
+			#MachineClass.Queue.insertByERPT(job, numClasses);
+			MachineClass.Queue.insertByLCFS(job, numClasses);
+
+		else:
+			# Add current job with new class to queue
+			MachineClass.Queue.insertByClass(job)			# add job to queue
+		
+		# Regardless of class, append job to the general prev jobs list
+		MachineClass.PreviousJobs.append(job)					# add job to previous jobs queue
+
+		# Print queue
+		#MachineClass.Queue.printList()
+		
+
+
 	def calcNumJobs(self, jobID, load):
 		self.currentNumJobs = MachineClass.Queue.Size #NOTE: This includes job in service
 		self.t = MachineClass.CurrentTime
@@ -895,10 +1064,31 @@ class MachineClass(object):
 		self.saveNumJobs(load, MachineClass.CurrentTime, self.currentNumJobs)
 		self.saveAvgNumJobs(load, MachineClass.CurrentTime, MachineClass.AvgNumJobs)
 
+	def calcNumJobsPerClass(self, numClasses):
+		numJobsArray = list(MachineClass.Queue.countClassesQueued(numClasses))
+
+		self.t = MachineClass.CurrentTime 
+		self.delta_t = self.t - MachineClass.PrevTimeA
+
+		for i in range(0, numClasses + 1):
+			# If one job in system
+			if(MachineClass.counter == 0):
+				MachineClass.PrevNumJobsArray = [0] * (numClasses + 1) 		# creates array of size (numClasses + 1) filled with 0s
+				MachineClass.AvgNumJobsArray = list(numJobsArray)			# First event is always create new job
+				MachineClass.counter = 1
+			# UPDATE 
+			else:
+				MachineClass.AvgNumJobsArray[i] = (float(MachineClass.PrevTimeA)/self.t)*float(MachineClass.AvgNumJobsArray[i]) + float(MachineClass.PrevNumJobsArray[i])*(float(self.delta_t)/self.t)
+									
+		# PrevTime becomes "old" t (set in regular caclulation)
+		MachineClass.PrevTimeA = self.t 
+		# PrevNum jobs becomes current num jobs
+		MachineClass.PrevNumJobsArray = list(numJobsArray)
+
 	def saveNumJobs(self, load, numJobs, time):
 		text = "%f,%f"%(numJobs, time) + "\n"
 		scaledLoad = int(load * 100)
-		path = "./SINGLE_SERVER_RESULTS/SRPT/SRPT_Num_load=%s_alpha=%s_servers=1.txt"%(scaledLoad, JobClass.BPArray[0])
+		path = "./SINGLE_SERVER_RESULTS/Class/Class_Num_load=%s_alpha=%s_servers=1.txt"%(scaledLoad, JobClass.BPArray[0])
 		
 		with open(path, "a") as myFile:
 			myFile.write(text)
@@ -907,116 +1097,109 @@ class MachineClass(object):
 	def saveAvgNumJobs(self, load, avgNumJobs, time):
 		text = "%f,%f"%(avgNumJobs, time) + "\n"
 		scaledLoad = int(load * 100)
-		path = "./SINGLE_SERVER_RESULTS/SRPT/SRPT_Avg_load=%s_alpha=%s_servers=1.txt"%(scaledLoad, JobClass.BPArray[0])
+		path = "./SINGLE_SERVER_RESULTS/Class/Class_Avg_load=%s_alpha=%s_servers=1.txt"%(scaledLoad, JobClass.BPArray[0])
 
 		with open(path, "a") as myFile:
 			myFile.write(text)
 		myFile.close()	
 
 	# Job arriving
-	def arrivalEvent(self, load, arrDist, procRate, procDist, percErrorMin, percErrorMax):
+	def arrivalEvent(self, load, arrDist, procRate, procDist, numClasses, percErrorMin, percErrorMax):
 		J = JobClass(self.master)
 		J.setJobAttributes(load, procRate, procDist, percErrorMin, percErrorMax, MachineClass.CurrentTime)
 		J.name = "Job%02d"%self.ctr
-
-		GUI.writeToConsole(self.master, "%.6f | %s arrived, ERPT = %.5f"%(MachineClass.CurrentTime, J.name, J.ERPT))
-		self.calcNumJobs(self.ctr, load)
-		#self.saveArrivals(J)					# save to list of arrivals, for testing
-
-		if(MachineClass.Queue.Size > 0):
-			self.updateJob()	# update data in queue
-		MachineClass.Queue.insert(J)	# add job to queue
-		self.processJob()	# process first job in queue
-
-		# Generate next arrival
-		MachineClass.TimeUntilArrival = self.setArrivalDist(J.arrivalRate, arrDist)
 		self.ctr += 1
 
-	def insertLargeJob(self, counter, procDist):
+		self.calcNumJobs(self.ctr, load)
+		self.calcNumJobsPerClass(numClasses)
+
+		if(MachineClass.Queue.Size > 0):
+			self.updateJob()	# update data in queue	
+		self.assignClass(numClasses, J, MachineClass.PreviousJobs, 0, 1)			# give job a class, and add to queue
+		#self.saveArrivals(J)					# save to list of arrivals, for testing
+
+		GUI.writeToConsole(self.master, "%.6f | %s arrived, class = %s"%(MachineClass.CurrentTime, J.name, J.priorityClass))
+		self.processJob()						# process first job in queue
+
+		MachineClass.NextArrival = MachineClass.CurrentTime + self.setArrivalDist(J.arrivalRate, arrDist) # generate next arrival
+		
+
+	# Inserts very large job with very small ERPT
+	def insertLargeJob(self, counter, procDist, numClasses):
 		J = JobClass(self.master)
 		J.setJobAttributes(1, 1, procDist, 0, 0, MachineClass.CurrentTime)
 		J.name = "JobXXXXX" + str(counter)
 		J.RPT = 100000
 		J.ERPT = 50000
+		self.assignClass(numClasses, J, MachineClass.PreviousJobs, 0, 1)
 		GUI.writeToConsole(self.master, "%.6f | %s arrived, ERPT = %.5f"%(MachineClass.CurrentTime, J.name, J.ERPT))
 		
 		self.calcNumJobs(self.ctr)
 		#self.saveArrivals(J)					# save to list of arrivals, for testing
-
+	
 		if(MachineClass.Queue.Size > 0):
 			self.updateJob()	# update data in queue
-		MachineClass.Queue.insert(J)	# add job to queue
 		self.processJob()	# process first job in queue
-
+	
 		# Generate next arrival
-		MachineClass.TimeUntilArrival = self.setArrivalDist(J.arrivalRate, 'Exponential')
-
-	#def saveArrivals(self, job):
-	#	text = "%s,       %.4f,      %.4f,      %.4f"%(job.name, job.arrivalTime, job.RPT, job.ERPT) + "\n"
-	#	
-	#	with open("Arrivals.txt", "a") as myFile:
-	#		myFile.write(text)
-	#	myFile.close()
+		MachineClass.TimeUntilArrival = self.setArrivalDist(J.arrivalRate, 'Exponential')		
 
 	# Processing first job in queue
 	def processJob(self):
 		MachineClass.ServiceStartTime = MachineClass.CurrentTime
-		currentJob = self.getProcessingJob()
-		GUI.writeToConsole(self.master, "%.6f | %s processing, ERPT = %.5f"%(MachineClass.CurrentTime, currentJob.name, currentJob.ERPT))
+		MachineClass.JobInService = self.getProcessingJob()
+		MachineClass.ServiceFinishTime = MachineClass.CurrentTime + MachineClass.JobInService.RPT
+		GUI.writeToConsole(self.master, "%.6f | %s processing, class = %s"%(MachineClass.CurrentTime, MachineClass.JobInService.name, MachineClass.JobInService.priorityClass))
 		MachineClass.ServerBusy = True
 
 	# Job completed
-	def completionEvent(self, load):
-		currentJob = self.getProcessingJob()
-		MachineClass.ServerBusy = False
+	def completionEvent(self, numClasses, load):
+		MachineClass.JobOrderOut.append(MachineClass.JobInService.name)
 
-		MachineClass.JobOrderOut.append(currentJob.name)
 		self.calcNumJobs(self.ctr, load)
-#		NumJobs.append(MachineClass.AvgNumJobs)			# y axis of plot
-#		NumJobsTime.append(MachineClass.CurrentTime)	# x axis of plot
-		TimeSys.append(MachineClass.CurrentTime - currentJob.arrivalTime)
-		ProcTime.append(currentJob.procTime)
-		PercError.append(abs(currentJob.percentError))
+		self.calcNumJobsPerClass(numClasses)
 
-		GUI.writeToConsole(self.master, "%.6f | %s COMPLTED"%(MachineClass.CurrentTime, currentJob.name))
-		MachineClass.Queue.removeHead() # remove job from queue
-
+		GUI.writeToConsole(self.master, "%.6f | %s COMPLTED"%(MachineClass.CurrentTime, MachineClass.JobInService.name))
+		MachineClass.ServerBusy = False
+		MachineClass.JobInService = None
+		
+		MachineClass.Queue.removeHead()		 # remove job from queue		
 
 
-
-	def run(self, load, arrDist, procRate, procDist, percErrorMin, percErrorMax, simLength):
+	def run(self, load, arrDist, procRate, procDist, percErrorMin, percErrorMax, numClasses, simLength):
 		counter = 1;
 		while 1:
-			if(self.ctr == 0):	# set time of first job arrival
+			# Generate time of first job arrival
+			if(self.ctr == 0):
 				arrRate = float(load) / procRate
-				MachineClass.TimeUntilArrival = self.setArrivalDist(arrRate, arrDist) # generate next arrival
+				MachineClass.NextArrival = MachineClass.CurrentTime + self.setArrivalDist(arrRate, arrDist)
 
 			# If no jobs in system, or time to arrival is less than remaining processing time of job currently processing
 			#if (MachineClass.CurrentTime >= 5000 and has_run == False):
-			#	self.insertLargeJob(procDist)
+			#	self.insertLargeJob(procDist, numClasses)
 			#	has_run = True
 
 			#Inject large jobs
 			#if(MachineClass.CurrentTime >= 2000000.0 and counter == 1):
-			#	self.insertLargeJob(counter, procDist);
+			#	self.insertLargeJob(counter, procDist, numClasses);
 			#	counter += 1;
 			#	print ("FIRST LARGE JOB INJECTED");
 			#elif(MachineClass.CurrentTime >= 2000500.0 and counter == 2):
-			#	self.insertLargeJob(counter, procDist);
+			#	self.insertLargeJob(counter, procDist, numClasses);
 			#	counter += 1;
 			#	print ("SECOND LARGE JOB INJECTED");				
 
-			if (MachineClass.ServerBusy == False) or ((MachineClass.ServerBusy == True) and (MachineClass.TimeUntilArrival < self.getProcessingJob().RPT)):
+			if (MachineClass.ServerBusy == False) or ((MachineClass.ServerBusy == True) and (MachineClass.NextArrival < MachineClass.ServiceFinishTime)):
 				#next event is arrival
-				MachineClass.CurrentTime += MachineClass.TimeUntilArrival
+				MachineClass.CurrentTime = MachineClass.NextArrival
 
 				# stop server from processing current job
 				MachineClass.ServerBusy == False
-				self.arrivalEvent(load, arrDist, procRate, procDist, percErrorMin, percErrorMax)
+				self.arrivalEvent(load, arrDist, procRate, procDist, numClasses, percErrorMin, percErrorMax)
 			else:
 				#next event is job finishing
-				MachineClass.CurrentTime += self.getProcessingJob().RPT
-				self.completionEvent(load)
+				MachineClass.CurrentTime = MachineClass.ServiceFinishTime
+				self.completionEvent(numClasses, load)
 
 				if(MachineClass.Queue.Size > 0):
 					self.processJob()
@@ -1026,10 +1209,11 @@ class MachineClass(object):
 				break
 
 
+
 #----------------------------------------------------------------------#
 def main():
-	window = GUI(None)                              # instantiate the class with no parent (None)
-	window.title('Single Server SRPT with Errors')  # title the window
+	window = GUI(None)                           			   # instantiate the class with no parent (None)
+	window.title('Single Server Approximate SRPT with Errors')  # title the window
 
 	# Global variables used in JobClass
 	main.timesClicked = 0       

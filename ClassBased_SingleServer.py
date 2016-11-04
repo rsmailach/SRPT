@@ -10,8 +10,12 @@
 # Rachel Mailach
 #----------------------------------------------------------------------#
 
-from Tkinter import *
+from tkinter import *
+#from tkinter import messagebox
+from tkinter import ttk 
+from tkinter import filedialog
 from datetime import datetime
+
 from math import log
 import plotly.plotly as py
 from plotly.graph_objs import Scatter
@@ -22,9 +26,6 @@ import plotly.graph_objs as go
 
 import copy
 import random
-import tkMessageBox
-import ttk
-import tkFileDialog
 import csv
 import operator
 
@@ -34,10 +35,8 @@ import pandas
 conn=sqlite3.connect('SingleServerDatabase_ASRPTE.db')
 
 NumJobs = []
+AvgNumJobs = []
 NumJobsTime = []
-TimeSys = []
-ProcTime = []
-PercError = []
 
 #----------------------------------------------------------------------#
 # Class: GUI
@@ -51,8 +50,8 @@ class GUI(Tk):
 		self.master = master        # reference to parent
 		self.statusText = StringVar()
 		global SEED
-		SEED = random.randint(0, 1000000000)
-		#SEED = 295588362
+		#SEED = random.randint(0, 1000000000)
+		SEED = 994863731
 		random.seed(SEED)
 		
 
@@ -112,7 +111,7 @@ class GUI(Tk):
 
 	def saveData(self, event):
 		# Get filename
-		filename = tkFileDialog.asksaveasfilename(title="Save as...", defaultextension='.txt')
+		filename = fileDialog.asksaveasfilename(title="Save as...", defaultextension='.txt')
 		
 		if filename:
 			file = open(filename, mode='w')
@@ -154,7 +153,7 @@ class GUI(Tk):
 
 	def saveParams(self, load, arrRate, arrDist, procRate, procDist, percErrorMin, percErrorMax, numClasses, simLength, alpha, lower, upper):
 		##params = pandas.DataFrame(columns=('seed', 'numServers', 'load', 'arrRate', 'arrDist', 'procRate', 'procDist', 'alpha', 'lower', 'upper', 'percErrorMin', 'percErrorMax', 'simLength'))
-		print SEED
+		print (SEED)
 		params = pandas.DataFrame({	'seed' : [SEED],
 									'load' : [load],
 									'arrRate' : [arrRate],
@@ -172,7 +171,7 @@ class GUI(Tk):
 									})
 
 		params.to_sql(name='parameters', con=conn, if_exists='append')
-		print params
+		print (params)
 
 	# def plotNumJobsInSys(self, numClasses):
 	# 	# SCATTER PLOT
@@ -202,10 +201,35 @@ class GUI(Tk):
 
 	# 	bar = Bar(df, 'classes', values='number of jobs', title="Average Number of Jobs Per Class")
 	# 	show(bar)
-
-	def plotNumJobsInSys(self, numClasses):
+	def plotNumJobsInSys(self):
 		py.sign_in('mailacrs','wowbsbc0qo')
 		trace0 = Scatter(x=NumJobsTime, y=NumJobs)
+		data = [trace0]
+		layout = go.Layout(
+			title='Number of Jobs Over Time',
+			xaxis=dict(
+				title='Time',
+				titlefont=dict(
+				family='Courier New, monospace',
+				size=18,
+				color='#7f7f7f'
+			)
+		),
+			yaxis=dict(
+				title='Number of Jobs',
+				titlefont=dict(
+				family='Courier New, monospace',
+				size=18,
+				color='#7f7f7f'
+			)
+		)
+		)
+		fig = go.Figure(data=data, layout=layout)
+		unique_url = py.plot(fig, filename = 'ClassBased_NumJobs')
+
+	def plotAvgNumJobsInSys(self, numClasses):
+		py.sign_in('mailacrs','wowbsbc0qo')
+		trace0 = Scatter(x=NumJobsTime, y=AvgNumJobs)
 		data = [trace0]
 		layout = go.Layout(
 			title='Average Number of Jobs Over Time',
@@ -227,7 +251,7 @@ class GUI(Tk):
 		)
 		)
 		fig = go.Figure(data=data, layout=layout)
-		unique_url = py.plot(fig, filename = 'SRPT_NumJobsInSys: Case1')
+		unique_url = py.plot(fig, filename = 'ClassBased_AvgNumJobs')
 
 		#-----------------------------------------------------------------------------#
 		# Average jobs/class
@@ -255,48 +279,13 @@ class GUI(Tk):
 		)
 		)
 		fig1 = go.Figure(data=data1, layout=layout1)
-		unique_url1 = py.plot(fig1, filename = 'SRPT_NumJobsInSysPerClass: Case1')
+		unique_url1 = py.plot(fig1, filename = 'ClassBased_NumJobsPerClass')
 
 	def calcVariance(self, List, avg):
 		var = 0
 		for i in List:
 			var += (avg - i)**2
 		return var/len(List)
-
-	def displayAverageData(self, numClasses):
-		self.plotNumJobsInSys(numClasses)
-		try:
-			AvgNumJobs = int(float(sum(NumJobs))/len(NumJobs))
-		except ZeroDivisionError:
-			AvgNumJobs = 0
-
-		try:
-			AvgTimeSys = float(sum(TimeSys))/len(TimeSys)
-		except ZeroDivisionError:
-			AvgTimeSys = 0.0
-
-		try:
-			AvgProcTime = float(sum(ProcTime))/len(ProcTime)
-		except ZeroDivisionError:
-			AvgProcTime = 0.0
-
-		try:
-			VarProcTime = self.calcVariance(ProcTime, AvgProcTime)
-		except ZeroDivisionError:
-			VarProcTime = 0.0
-
-		try:
-			AvgPercError = float(sum(PercError))/len(PercError)
-		except ZeroDivisionError:
-			AvgPercError = 0.0
-
-		self.writeToConsole('\n\nAverage number of jobs in the system: %.6f' %AvgNumJobs)
-		self.writeToConsole('Average time in system, from start to completion: %.6f' %AvgTimeSys)
-		self.writeToConsole('Average processing time, based on generated service times: %.6f' %AvgProcTime)
-		self.writeToConsole('Variance of processing time: %.6f' %VarProcTime)
-		self.writeToConsole('Average percent error: %.2f\n' %AvgPercError)
-		#self.writeToConsole('Request order: %s' % ArrivalClass.JobOrderIn)
-		#self.writeToConsole('Service order: %s\n\n' % MachineClass.JobOrderOut)
 
 	def stopSimulation(self, event):
 		MachineClass.StopSim = True
@@ -337,7 +326,8 @@ class GUI(Tk):
 					JobClass.BPArray[1],			# lower
 					JobClass.BPArray[2])			# upper		
 
-		self.displayAverageData(I.valuesList[5])
+		self.plotNumJobsInSys()
+		self.plotAvgNumJobsInSys(I.valuesList[5])
 		#self.saveData(event)
 		self.updateStatusBar("Simulation complete.")
 
@@ -363,13 +353,13 @@ class Input(LabelFrame):
 		self.errorMessage = StringVar()
 		self.comboboxVal = StringVar()
 
-		self.loadInput.set(0.9)       		 	   	##################################CHANGE LATER
+		self.loadInput.set(0.70)       		 	   	##################################CHANGE LATER
 		#self.arrivalRateInput.set(1.0)         	 ##################################CHANGE LATER
 		self.processingRateInput.set(0.5)   	    ##################################CHANGE LATER
 		self.percentErrorMinInput.set(-50)          ##################################CHANGE LATER
 		self.percentErrorMaxInput.set(0)          ##################################CHANGE LATER
 		self.numberOfClassesInput.set(10)			##################################CHANGE LATER
-		self.simLengthInput.set(10000000.0)           ##################################CHANGE LATER
+		self.simLengthInput.set(5000000.0)           ##################################CHANGE LATER
 
 		self.grid_columnconfigure(0, weight=2)
 		self.grid_columnconfigure(1, weight=2)
@@ -463,7 +453,7 @@ class Input(LabelFrame):
 		try:
 				load = self.loadInput.get()
 				#arrivalRate = self.arrivalRateInput.get()
-				#processingRate = self.processingRateInput.get()
+				processingRate = self.processingRateInput.get()
 				percentErrorMin = self.percentErrorMinInput.get()
 				percentErrorMax = self.percentErrorMaxInput.get()
 				numClasses = self.numberOfClassesInput.get()
@@ -472,14 +462,14 @@ class Input(LabelFrame):
 				self.errorMessage.set("One of your inputs is an incorrect type, try again.")
 				return 1
 
-		try:
-			arrRate = float(self.arrivalRateInput.get())
-		except ValueError:
-			arrRate = 0.0
-		try:
-			procRate = float(self.processingRateInput.get())
-		except ValueError:
-			procRate = 0.0
+		# try:
+		# 	arrRate = float(self.arrivalRateInput.get())
+		# except ValueError:
+		# 	arrRate = 0.0
+		# try:
+		# 	procRate = float(self.processingRateInput.get())
+		# except ValueError:
+		# 	procRate = 0.0
 
 		if load <= 0.0:
 				self.errorMessage.set("Load must be non-zero value!")
@@ -498,7 +488,7 @@ class Input(LabelFrame):
 				return 1
 		else:
 				self.errorMessage.set("")
-				Input.valuesList = [load, arrRate, procRate, percentErrorMin, percentErrorMax, numClasses, maxSimLength]
+				Input.valuesList = [load, 0.0, processingRate, percentErrorMin, percentErrorMax, numClasses, maxSimLength]
 				return 0
 
 	def getDropDownValues(self):
@@ -619,7 +609,7 @@ class CustomDist(object):
 			elif self.stringList[i] == "l" and self.stringList[i+1] == "n":
 				self.stringList[i] = "log"
 				self.stringList[i+1] = ""
-		print "".join(self.stringList)
+		print ("".join(self.stringList))
 		return "".join(self.stringList)
 
 
@@ -692,7 +682,7 @@ class BoundedParetoDist(object):
 		self.l = float(self.e2.get())
 		self.u = float(self.e3.get())
 		if (self.a <= 0) or (self.u < self.l) or (self.l <= 0):
-			print "ERROR: Bounded pareto paramater error"
+			print ("ERROR: Bounded pareto paramater error")
 			self.errorMessage.set("Bounded pareto paramater error")
 			return 1
 		else:
@@ -791,7 +781,7 @@ class LinkedList(object):
 			self.head = self.head.nextNode		# move head forward one node
 			LinkedList.Size -= 1
 		else:
-			print "ERROR: The linked list is already empty!"
+			print ("ERROR: The linked list is already empty!")
 
 	def clear(self):
 		LinkedList.Size = 0
@@ -799,10 +789,10 @@ class LinkedList(object):
 
 	def printList(self):
 		current = self.head
-		print "---------------------"
-		print "\nJOBS IN QUEUE:"
+		print ("---------------------")
+		print ("\nJOBS IN QUEUE:")
 		while (current != None):
-			print "%s, class %s, ERPT = %.4f"%(current.job.name, current.job.priorityClass, current.job.ERPT)
+			print ("%s, class %s, ERPT = %.4f"%(current.job.name, current.job.priorityClass, current.job.ERPT))
 			current = current.nextNode
 
 
@@ -982,10 +972,8 @@ class MachineClass(object):
 		MachineClass.counter = 0
 
 		NumJobs[:] = []
+		AvgNumJobs[:] = []
 		NumJobsTime[:] = []
-		TimeSys[:] = []
-		ProcTime[:] = []
-		PercError[:] = [] 
 		MachineClass.JobOrderOut[:] = []
 	
 		self.ctr = 0
@@ -1011,12 +999,12 @@ class MachineClass(object):
 		currentJob.RPT -= serviceTime
 		currentJob.ERPT -= serviceTime
 
-	def saveArrivals(self, job):
-		text = "%s,       %.4f,      %.4f,      %.4f,      %s"%(job.name, job.arrivalTime, job.RPT, job.ERPT, job.priorityClass) + "\n"
-		
-		with open("Arrivals.txt", "a") as myFile:
-			myFile.write(text)
-		myFile.close()
+	#def saveArrivals(self, job):
+	#	text = "%s,       %.4f,      %.4f,      %.4f,      %s"%(job.name, job.arrivalTime, job.RPT, job.ERPT, job.priorityClass) + "\n"
+	#	
+	#	with open("Arrivals.txt", "a") as myFile:
+	#		myFile.write(text)
+	#	myFile.close()
 
 	# Give arriving job a class and add it to the queue
 	def assignClass(self, numClasses, job, prevJobs, counterStart, counter):
@@ -1053,8 +1041,8 @@ class MachineClass(object):
 		
 
 
-	def calcNumJobs(self, jobID):
-		self.currentNumJobs = MachineClass.Queue.Size
+	def calcNumJobs(self, jobID, load):
+		self.currentNumJobs = MachineClass.Queue.Size #NOTE: This includes job in service
 		self.t = MachineClass.CurrentTime
 		self.delta_t = self.t - MachineClass.PrevTime 
 
@@ -1070,6 +1058,11 @@ class MachineClass(object):
 		# PrevNum jobs becomes current num jobs
 		MachineClass.PrevNumJobs = self.currentNumJobs
 
+		NumJobs.append(self.currentNumJobs)				# y axis of plot
+		AvgNumJobs.append(MachineClass.AvgNumJobs)		# y axis of plot
+		NumJobsTime.append(MachineClass.CurrentTime)	# x axis of plot
+		self.saveNumJobs(load, MachineClass.CurrentTime, self.currentNumJobs)
+		self.saveAvgNumJobs(load, MachineClass.CurrentTime, MachineClass.AvgNumJobs)
 
 	def calcNumJobsPerClass(self, numClasses):
 		numJobsArray = list(MachineClass.Queue.countClassesQueued(numClasses))
@@ -1092,6 +1085,24 @@ class MachineClass(object):
 		# PrevNum jobs becomes current num jobs
 		MachineClass.PrevNumJobsArray = list(numJobsArray)
 
+	def saveNumJobs(self, load, numJobs, time):
+		text = "%f,%f"%(numJobs, time) + "\n"
+		scaledLoad = int(load * 100)
+		path = "./SINGLE_SERVER_RESULTS/Class/Class_Num_load=%s_alpha=%s_servers=1.txt"%(scaledLoad, JobClass.BPArray[0])
+		
+		with open(path, "a") as myFile:
+			myFile.write(text)
+		myFile.close()				
+
+	def saveAvgNumJobs(self, load, avgNumJobs, time):
+		text = "%f,%f"%(avgNumJobs, time) + "\n"
+		scaledLoad = int(load * 100)
+		path = "./SINGLE_SERVER_RESULTS/Class/Class_Avg_load=%s_alpha=%s_servers=1.txt"%(scaledLoad, JobClass.BPArray[0])
+
+		with open(path, "a") as myFile:
+			myFile.write(text)
+		myFile.close()	
+
 	# Job arriving
 	def arrivalEvent(self, load, arrDist, procRate, procDist, numClasses, percErrorMin, percErrorMax):
 		J = JobClass(self.master)
@@ -1099,13 +1110,13 @@ class MachineClass(object):
 		J.name = "Job%02d"%self.ctr
 		self.ctr += 1
 
-		self.calcNumJobs(self.ctr)
+		self.calcNumJobs(self.ctr, load)
 		self.calcNumJobsPerClass(numClasses)
 
 		if(MachineClass.Queue.Size > 0):
 			self.updateJob()	# update data in queue	
 		self.assignClass(numClasses, J, MachineClass.PreviousJobs, 0, 1)			# give job a class, and add to queue
-		self.saveArrivals(J)					# save to list of arrivals, for testing
+		#self.saveArrivals(J)					# save to list of arrivals, for testing
 
 		GUI.writeToConsole(self.master, "%.6f | %s arrived, class = %s"%(MachineClass.CurrentTime, J.name, J.priorityClass))
 		self.processJob()						# process first job in queue
@@ -1114,24 +1125,24 @@ class MachineClass(object):
 		
 
 	# Inserts very large job with very small ERPT
-	#def insertLargeJob(self, procDist, numClasses):
-	#	J = JobClass(self.master)
-	#	J.setJobAttributes(1, 1, procDist, 1, MachineClass.CurrentTime)
-	#	J.name = "JobXXXXX"
-	#	J.RPT = 10000
-	#	J.ERPT = 1
-	#	self.assignClass(numClasses, J)			# give job a class, and add to queue
-	#	GUI.writeToConsole(self.master, "%.6f | %s arrived, ERPT = %.5f"%(MachineClass.CurrentTime, J.name, J.ERPT))
-	#	
-	#	self.calcNumJobs(self.ctr)
-	#	self.saveArrivals(J)					# save to list of arrivals, for testing
-	#
-	#	if(MachineClass.Queue.Size > 0):
-	#		self.updateJob()	# update data in queue
-	#	self.processJob()	# process first job in queue
-	#
-	#	# Generate next arrival
-	#	MachineClass.TimeUntilArrival = self.setArrivalDist(J.arrivalRate, 'Exponential')		
+	def insertLargeJob(self, counter, procDist, numClasses):
+		J = JobClass(self.master)
+		J.setJobAttributes(1, 1, procDist, 0, 0, MachineClass.CurrentTime)
+		J.name = "JobXXXXX" + str(counter)
+		J.RPT = 100000
+		J.ERPT = 50000
+		self.assignClass(numClasses, J, MachineClass.PreviousJobs, 0, 1)
+		GUI.writeToConsole(self.master, "%.6f | %s arrived, ERPT = %.5f"%(MachineClass.CurrentTime, J.name, J.ERPT))
+		
+		self.calcNumJobs(self.ctr)
+		#self.saveArrivals(J)					# save to list of arrivals, for testing
+	
+		if(MachineClass.Queue.Size > 0):
+			self.updateJob()	# update data in queue
+		self.processJob()	# process first job in queue
+	
+		# Generate next arrival
+		MachineClass.TimeUntilArrival = self.setArrivalDist(J.arrivalRate, 'Exponential')		
 
 	# Processing first job in queue
 	def processJob(self):
@@ -1142,16 +1153,11 @@ class MachineClass(object):
 		MachineClass.ServerBusy = True
 
 	# Job completed
-	def completionEvent(self, numClasses):
+	def completionEvent(self, numClasses, load):
 		MachineClass.JobOrderOut.append(MachineClass.JobInService.name)
 
-		self.calcNumJobs(self.ctr)
+		self.calcNumJobs(self.ctr, load)
 		self.calcNumJobsPerClass(numClasses)
-		NumJobs.append(MachineClass.AvgNumJobs)				# y axis of plot
-		NumJobsTime.append(MachineClass.CurrentTime)		# x axis of plot
-		TimeSys.append(MachineClass.CurrentTime - MachineClass.JobInService.arrivalTime)
-		ProcTime.append(MachineClass.JobInService.procTime)
-		PercError.append(abs(MachineClass.JobInService.percentError))
 
 		GUI.writeToConsole(self.master, "%.6f | %s COMPLTED"%(MachineClass.CurrentTime, MachineClass.JobInService.name))
 		MachineClass.ServerBusy = False
@@ -1161,7 +1167,7 @@ class MachineClass(object):
 
 
 	def run(self, load, arrDist, procRate, procDist, percErrorMin, percErrorMax, numClasses, simLength):
-		has_run = False
+		counter = 1;
 		while 1:
 			# Generate time of first job arrival
 			if(self.ctr == 0):
@@ -1173,6 +1179,16 @@ class MachineClass(object):
 			#	self.insertLargeJob(procDist, numClasses)
 			#	has_run = True
 
+			#Inject large jobs
+			#if(MachineClass.CurrentTime >= 2000000.0 and counter == 1):
+			#	self.insertLargeJob(counter, procDist, numClasses);
+			#	counter += 1;
+			#	print ("FIRST LARGE JOB INJECTED");
+			#elif(MachineClass.CurrentTime >= 2000500.0 and counter == 2):
+			#	self.insertLargeJob(counter, procDist, numClasses);
+			#	counter += 1;
+			#	print ("SECOND LARGE JOB INJECTED");				
+
 			if (MachineClass.ServerBusy == False) or ((MachineClass.ServerBusy == True) and (MachineClass.NextArrival < MachineClass.ServiceFinishTime)):
 				#next event is arrival
 				MachineClass.CurrentTime = MachineClass.NextArrival
@@ -1183,7 +1199,7 @@ class MachineClass(object):
 			else:
 				#next event is job finishing
 				MachineClass.CurrentTime = MachineClass.ServiceFinishTime
-				self.completionEvent(numClasses)
+				self.completionEvent(numClasses, load)
 
 				if(MachineClass.Queue.Size > 0):
 					self.processJob()
