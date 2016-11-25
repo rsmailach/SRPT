@@ -309,7 +309,7 @@ class Input(LabelFrame):
 		self.loadInput.set(0.95)       		 	   	##################################CHANGE LATER
 		#self.arrivalRateInput.set(1.0)         	 ##################################CHANGE LATER
 		self.processingRateInput.set(0.5)   	    ##################################CHANGE LATER
-		self.percentErrorMinInput.set(-50)          ##################################CHANGE LATER
+		self.percentErrorMinInput.set(0)          ##################################CHANGE LATER
 		self.percentErrorMaxInput.set(0)          ##################################CHANGE LATER
 		self.simLengthInput.set(5000000.0)
 
@@ -584,7 +584,7 @@ class BoundedParetoDist(object):
 		self.U = DoubleVar()
 
 		# Set default parameters
-		self.alpha.set(1.1)
+		self.alpha.set(1.5)
 		self.L.set(1)
 		self.U.set(10**(6))
 
