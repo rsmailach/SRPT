@@ -1088,7 +1088,7 @@ class MachineClass(object):
 	def saveNumJobs(self, load, numJobs, time):
 		text = "%f,%f"%(numJobs, time) + "\n"
 		scaledLoad = int(load * 100)
-		path = "./SINGLE_SERVER_RESULTS/Class/Class_Num_load=%s_alpha=%s_servers=1.txt"%(scaledLoad, JobClass.BPArray[0])
+		path = "./SINGLE_SERVER_RESULTS/Catastrophic/Class_Num_load=%s_alpha=%s_servers=1_catastrophic.txt"%(scaledLoad, JobClass.BPArray[0])
 		
 		with open(path, "a") as myFile:
 			myFile.write(text)
@@ -1097,7 +1097,7 @@ class MachineClass(object):
 	def saveAvgNumJobs(self, load, avgNumJobs, time):
 		text = "%f,%f"%(avgNumJobs, time) + "\n"
 		scaledLoad = int(load * 100)
-		path = "./SINGLE_SERVER_RESULTS/Class/Class_Avg_load=%s_alpha=%s_servers=1.txt"%(scaledLoad, JobClass.BPArray[0])
+		path = "./SINGLE_SERVER_RESULTS/Catastrophic/Class_Avg_load=%s_alpha=%s_servers=1_catasrophic.txt"%(scaledLoad, JobClass.BPArray[0])
 
 		with open(path, "a") as myFile:
 			myFile.write(text)
@@ -1125,7 +1125,7 @@ class MachineClass(object):
 		
 
 	# Inserts very large job with very small ERPT
-	def insertLargeJob(self, counter, procDist, numClasses):
+	def insertLargeJob(self, counter, procDist, numClasses,load):
 		J = JobClass(self.master)
 		J.setJobAttributes(1, 1, procDist, 0, 0, MachineClass.CurrentTime)
 		J.name = "JobXXXXX" + str(counter)
@@ -1134,7 +1134,7 @@ class MachineClass(object):
 		self.assignClass(numClasses, J, MachineClass.PreviousJobs, 0, 1)
 		GUI.writeToConsole(self.master, "%.6f | %s arrived, ERPT = %.5f"%(MachineClass.CurrentTime, J.name, J.ERPT))
 		
-		self.calcNumJobs(self.ctr)
+		self.calcNumJobs(self.ctr,load)
 		#self.saveArrivals(J)					# save to list of arrivals, for testing
 	
 		if(MachineClass.Queue.Size > 0):
@@ -1174,20 +1174,15 @@ class MachineClass(object):
 				arrRate = float(load) / procRate
 				MachineClass.NextArrival = MachineClass.CurrentTime + self.setArrivalDist(arrRate, arrDist)
 
-			# If no jobs in system, or time to arrival is less than remaining processing time of job currently processing
-			#if (MachineClass.CurrentTime >= 5000 and has_run == False):
-			#	self.insertLargeJob(procDist, numClasses)
-			#	has_run = True
-
 			#Inject large jobs
-			#if(MachineClass.CurrentTime >= 2000000.0 and counter == 1):
-			#	self.insertLargeJob(counter, procDist, numClasses);
-			#	counter += 1;
-			#	print ("FIRST LARGE JOB INJECTED");
-			#elif(MachineClass.CurrentTime >= 2000500.0 and counter == 2):
-			#	self.insertLargeJob(counter, procDist, numClasses);
-			#	counter += 1;
-			#	print ("SECOND LARGE JOB INJECTED");				
+			if(MachineClass.CurrentTime >= 2000000.0 and counter == 1):
+				self.insertLargeJob(counter, procDist, numClasses, load);
+				counter += 1;
+				print ("FIRST LARGE JOB INJECTED");
+			elif(MachineClass.CurrentTime >= 2000500.0 and counter == 2):
+				self.insertLargeJob(counter, procDist, numClasses, load);
+				counter += 1;
+				print ("SECOND LARGE JOB INJECTED");				
 
 			if (MachineClass.ServerBusy == False) or ((MachineClass.ServerBusy == True) and (MachineClass.NextArrival < MachineClass.ServiceFinishTime)):
 				#next event is arrival
